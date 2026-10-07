@@ -1118,7 +1118,18 @@ def test_when_predicate_batch_fires_interrupt_when_true() -> None:
     assert result is not None
 
 
-@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize(
+    "asynchronous",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 11), reason="Asyncio context vars require Python 3.11+"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("reviewed_index", [0, 1, 2])
 async def test_when_predicate_batch_resume_rejects_selected_call(
     *, asynchronous: bool, reviewed_index: int
