@@ -1,0 +1,16 @@
+{"async": false, "executed": ["beta"], "mode": "batched", "pending_after_resume": 0, "rejected_ids": ["call_alpha"], "reviewed": ["alpha"], "selected_on_resume": ["alpha"]}
+{"async": false, "executed": ["alpha"], "mode": "batched", "pending_after_resume": 0, "rejected_ids": ["call_beta"], "reviewed": ["alpha"], "selected_on_resume": ["beta"]}
+{"async": false, "error": "Number of human decisions (1) does not match number of hanging tool calls (2).", "executed": [], "mode": "batched", "reviewed": ["alpha"], "selected_on_resume": ["alpha", "beta"]}
+{"async": false, "executed": ["alpha", "beta"], "mode": "batched", "pending_after_resume": 0, "rejected_ids": [], "reviewed": ["alpha"], "selected_on_resume": []}
+{"async": true, "executed": ["beta"], "mode": "batched", "pending_after_resume": 0, "rejected_ids": ["call_alpha"], "reviewed": ["alpha"], "selected_on_resume": ["alpha"]}
+{"async": true, "executed": ["alpha"], "mode": "batched", "pending_after_resume": 0, "rejected_ids": ["call_beta"], "reviewed": ["alpha"], "selected_on_resume": ["beta"]}
+{"async": true, "error": "Number of human decisions (1) does not match number of hanging tool calls (2).", "executed": [], "mode": "batched", "reviewed": ["alpha"], "selected_on_resume": ["alpha", "beta"]}
+{"async": true, "executed": ["alpha", "beta"], "mode": "batched", "pending_after_resume": 0, "rejected_ids": [], "reviewed": ["alpha"], "selected_on_resume": []}
+{"async": false, "executed": ["beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": ["call_alpha"], "reviewed": ["alpha"], "selected_on_resume": ["alpha"]}
+{"async": false, "executed": ["alpha", "beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": [], "reviewed": ["alpha"], "selected_on_resume": ["beta"]}
+{"async": false, "executed": ["beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": ["call_alpha"], "reviewed": ["alpha"], "selected_on_resume": ["alpha", "beta"]}
+{"async": false, "executed": ["alpha", "beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": [], "reviewed": ["alpha"], "selected_on_resume": []}
+{"async": true, "executed": ["beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": ["call_alpha"], "reviewed": ["alpha"], "selected_on_resume": ["alpha"]}
+{"async": true, "executed": ["alpha", "beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": [], "reviewed": ["alpha"], "selected_on_resume": ["beta"]}
+{"async": true, "executed": ["beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": ["call_alpha"], "reviewed": ["alpha"], "selected_on_resume": ["alpha", "beta"]}
+{"async": true, "executed": ["alpha", "beta"], "mode": "per_call", "pending_after_resume": 0, "rejected_ids": [], "reviewed": ["alpha"], "selected_on_resume": []}

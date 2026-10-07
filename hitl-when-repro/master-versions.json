@@ -1,0 +1,6 @@
+{
+  "langchain": "1.4.3",
+  "langchain-core": "1.6.7",
+  "langgraph": "1.2.11",
+  "langgraph-checkpoint": "4.2.0"
+}
