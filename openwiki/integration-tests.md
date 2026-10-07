@@ -5,7 +5,7 @@ description: "How to write integration tests that call real model APIs with VCR 
 tags: [integration-tests, vcr, cassettes, api-testing, pytest, ci-cd, model-testing]
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+    at: 2026-10-07T08:30:45.453Z
 sources:
   - id: openwiki-source-ff76574b014ac8b5c67560a6
     resource: repo://libs/langchain_v1/tests/integration_tests/chat_models/test_base.py
@@ -29,7 +29,7 @@ sources:
     resource: repo://libs/partners/openai/tests/integration_tests/embeddings/test_base.py
   - id: openwiki-source-db02c1dda8563ab005cd9d62
     resource: repo://libs/standard-tests/langchain_tests/conftest.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-28T08:35:20.640Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-10-07T08:30:45.453Z" }
 ---
 
 ## Overview
@@ -720,6 +720,147 @@ Standard test methods inherit VCR integration:
 4. When a partner updates a test (e.g., adds a new model to test), new cassettes are recorded with `--record-mode=new_episodes`
 
 This approach ensures that all LangChain partners maintain consistent test coverage and that changes to the standard test suite (new test methods, new capabilities) are automatically picked up by all partners.
+
+## Timeout and Retry Handling
+
+Integration tests must account for flaky network conditions, rate limiting, and transient API failures when calling live services. LangChain provides configurable timeout and retry mechanisms at both the client level and the test level.
+
+### Client-Level Timeout and Retry Configuration
+
+Model clients (e.g., `ChatOpenAI`) accept `timeout` and `max_retries` parameters to handle transient failures:
+
+```python
+from langchain_openai import ChatOpenAI
+
+# Live tests with explicit timeout and retry configuration
+@pytest.mark.scheduled
+def test_chat_openai_with_retry():
+    chat = ChatOpenAI(
+        model="gpt-4o-mini",
+        timeout=10.0,      # Request timeout in seconds
+        max_retries=3,     # Exponential backoff retries for transient failures (5xx, rate limit)
+    )
+    response = chat.invoke("Hello, world!")
+    assert response.content
+```
+
+**Parameters:**
+
+- **`timeout`** (float, seconds): How long to wait for a response before raising a timeout error. Typical values: 10-30 seconds for model APIs.
+- **`max_retries`** (int): Number of automatic exponential backoff retries. The client retries on transient failures:
+  - HTTP 429 (rate limit)
+  - HTTP 503 (service unavailable/capacity error)
+  - Connection timeouts and read timeouts
+  - Network errors
+
+The retry strategy uses **exponential backoff**: first retry after ~1 second, second after ~2 seconds, etc. This spreads load during rate-limit events and gives servers time to recover.
+
+### Rate Limiting and Capacity Errors
+
+When testing against live APIs with rate limits, use higher `max_retries` and reasonable `timeout` values:
+
+```python
+@pytest.mark.scheduled
+def test_chat_openai_rate_limit_resilient():
+    """Test that rate limit errors are handled gracefully."""
+    chat = ChatOpenAI(
+        model="gpt-4o-mini",
+        timeout=30.0,      # Longer timeout for rate-limited endpoints
+        max_retries=3,     # Add retries for 503 capacity errors
+    )
+    response = chat.invoke("What is the meaning of life?")
+    assert response.content
+```
+
+If a test consistently fails with rate limit or capacity errors in scheduled CI runs, consider:
+1. Adding more retries: `max_retries=5` or higher
+2. Increasing timeout: `timeout=60.0` for slow endpoints
+3. Using cassette-backed tests (`@pytest.mark.vcr`) instead to avoid live calls entirely
+
+### VCR Cassettes and Timeout
+
+**VCR cassettes bypass timeouts and retries** because responses are replayed instantly from disk. When using cassettes (`@pytest.mark.vcr`), timeout and retry settings have no effect—VCR serves cached responses synchronously.
+
+This means:
+
+1. **Cassette tests are always fast and reliable**: No network latency, no rate limits, no transient failures
+2. **Live tests validate retry logic**: Scheduled tests with `@pytest.mark.scheduled` actually exercise timeouts and retries
+3. **Mixing cassette and live modes**: Tests can be converted between modes without changing test code—just add/remove the `@pytest.mark.vcr` marker
+
+Example of a test that works in both modes:
+
+```python
+@pytest.mark.vcr
+def test_chat_openai_resilient():
+    """Test invoke with timeout/retry settings.
+    
+    With @pytest.mark.vcr: Cassette is replayed instantly (timeout/retry unused).
+    Without marker in scheduled CI: Live call respects timeout and retries.
+    """
+    chat = ChatOpenAI(
+        model="gpt-4o-mini",
+        timeout=10.0,
+        max_retries=3,
+    )
+    response = chat.invoke("Hello")
+    assert response.content
+```
+
+### Async and Streaming with Timeout
+
+Async and streaming operations also respect timeout and retry settings:
+
+```python
+@pytest.mark.scheduled
+async def test_chat_openai_async_with_timeout():
+    """Test async invoke with timeout."""
+    chat = ChatOpenAI(
+        model="gpt-4o-mini",
+        timeout=10.0,
+        max_retries=3,
+    )
+    response = await chat.ainvoke("Hello")
+    assert response.content
+
+@pytest.mark.scheduled
+def test_chat_openai_stream_with_timeout():
+    """Test streaming with timeout."""
+    chat = ChatOpenAI(
+        model="gpt-4o-mini",
+        timeout=10.0,
+        max_retries=3,
+    )
+    chunks = list(chat.stream("Hello"))
+    assert len(chunks) > 0
+```
+
+Streaming tests may need longer timeouts than invoke tests because:
+- First chunk can be slow (token processing)
+- Network buffering adds latency per chunk
+- Exponential backoff retries compound across chunks
+
+### Debugging Timeout and Network Failures
+
+If a scheduled integration test times out or fails with a network error:
+
+1. **Check the error logs** for the root cause:
+   - `ReadTimeout`: Server too slow; increase `timeout`
+   - `APIConnectionError`: Network/firewall issue; check connectivity
+   - `RateLimitError` (429): Rate limit hit; increase `max_retries`
+   - `ServiceUnavailableError` (503): Server capacity full; increase `max_retries` or wait for recovery
+
+2. **Reproduce locally with live credentials**:
+   ```bash
+   cd libs/partners/openai
+   # Run the test locally with a valid API key
+   make integration_tests  # Runs with live API, respects timeout/retry settings
+   ```
+
+3. **Switch to cassette-backed testing** if live API is unavailable:
+   ```bash
+   # Replay the cassette locally (fast, no network)
+   uv run --group test pytest --record-mode=none -m vcr tests/integration_tests/chat_models/test_base.py::test_chat_openai_resilient
+   ```
 
 ## Best Practices
 

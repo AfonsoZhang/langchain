@@ -1,11 +1,8 @@
 ---
 type: "Reference"
-title: "Tools and Tool Binding"
-description: "LangChain's tool system enables agents and language models to execute structured actions through schema-aware components with automatic validation, error handling, and callback integration."
+title: "Tools, Tool Calling, and Tool Schemas"
+description: "Complete reference for tool definition, schema generation, structured parsing, and integration with agent systems: BaseTool abstraction, tool conversion from functions and Pydantic models, tool calling protocols, and response marshaling."
 tags: ["tool", "agent", "schema", "runnable", "execution"]
-verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
 sources:
   - id: openwiki-source-9861ba5cf0c42c142cf732f9
     resource: repo://libs/core/langchain_core/messages/tool.py
@@ -19,7 +16,10 @@ sources:
     resource: repo://libs/core/langchain_core/tools/simple.py
   - id: openwiki-source-b816e651a5890bde13cf8013
     resource: repo://libs/core/langchain_core/tools/structured.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-21T08:30:16.745Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-10-07T08:30:45.453Z" }
+verified:
+  - by: openwiki/0.5.0
+    at: 2026-10-07T08:30:45.453Z
 ---
 
 ## Overview
@@ -401,7 +401,6 @@ The conversion:
 - Validates schema is object type (required for multi-arg tools)
 - Wraps invoke/ainvoke to inject callbacks into config
 - Delegates to StructuredTool.from_function() with wrapped functions
-- Falls back to Tool for string-input runnables
 
 ## Lifecycle and Invariants
 

@@ -3,6 +3,9 @@ type: "Reference"
 title: "Agent Factory and create_agent"
 description: "The agent factory constructs state machines that orchestrate conversation flow between a language model, tool execution, and middleware layers. The create_agent function handles tool binding, structured output, state schema resolution, and graph compilation."
 tags: [agents, factory, state-machine, middleware, langgraph]
+verified:
+  - by: openwiki/0.5.0
+    at: 2026-10-07T08:30:45.453Z
 sources:
   - id: openwiki-source-71e882e1ac9757ea8e959a7c
     resource: repo://libs/langchain_v1/langchain/agents/factory.py
@@ -12,10 +15,7 @@ sources:
     resource: repo://libs/langchain_v1/langchain/agents/middleware/_trace_policy.py
   - id: openwiki-source-03e8ca0eebe37feda8566793
     resource: repo://libs/langchain_v1/langchain/agents/middleware/types.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-21T08:30:16.745Z" }
-verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+generated: { by: "openwiki/0.5.0", at: "2026-10-07T08:30:45.453Z" }
 ---
 
 ## Overview
@@ -26,7 +26,6 @@ The **Agent Factory** is the foundational entry point for building LangChain age
 
 ```python
 from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
 
 def check_weather(location: str) -> str:
     """Return the weather forecast for the specified location."""
@@ -55,25 +54,25 @@ flowchart TD
     ENTRY --> LOOP["Loop Entry<br/>(before_model or model)"]
     LOOP --> MODEL["Model Node<br/>(LLM Call)"]
     MODEL --> AFTER["After Model<br/>(after_model middleware)"]
-    AFTER --> ROUTER{Has Tool Calls?}
-    ROUTER -->|No| EXIT["Exit Node<br/>(after_agent or END)"]
-    ROUTER -->|Yes| TOOLS["Tools Node<br/>(Execute Tools)"]
+    AFTER --> ROUTER{Check<br/>Conditions}
+    ROUTER -->|jump_to: end<br/>or no tools| EXIT["Exit Node<br/>(after_agent or END)"]
+    ROUTER -->|pending tools| TOOLS["Tools Node<br/>(Execute Tools)"]
     TOOLS --> CHECK{Exit?}
-    CHECK -->|return_direct or<br/>structured_output| EXIT
-    CHECK -->|No| LOOP
+    CHECK -->|return_direct or<br/>structured_output or<br/>no pending| EXIT
+    CHECK -->|continue| LOOP
     EXIT --> END([END])
 ```
 
-Agent execution flow showing middleware hooks at each stage.
+Agent execution flow showing middleware hooks and conditional routing at each stage.
 
 **Key Nodes:**
 
-- **Entry Node**: Runs before_agent hooks once at start, then before_model hooks if present, else proceeds to model.
+- **Entry Node**: Runs `before_agent` hooks once at start (if any middleware implements them), then `before_model` hooks if present, else proceeds to model.
 - **Loop Entry**: Marks the beginning of the model-tool iteration loop. Tools loop back here after execution (unless exit conditions are met).
-- **Model Node**: Calls the language model with messages and system prompt. Handles structured output parsing.
-- **After Model**: Runs after_model hooks after model output (runs each loop iteration).
+- **Model Node**: Calls the language model with messages and system prompt. Handles structured output parsing and tool binding.
+- **After Model**: Runs `after_model` hooks after model output (runs each loop iteration).
 - **Tools Node**: Executes tools returned by the model. Only added if tools are defined. Skipped if model returns no tool calls.
-- **Exit Node**: Runs after_agent hooks once at end, then exits the graph.
+- **Exit Node**: Runs `after_agent` hooks once at end (if any middleware implements them), then exits the graph.
 
 ## Core Concepts
 
@@ -84,14 +83,14 @@ The agent maintains a typed state dictionary that flows through the graph:
 ```python
 class AgentState(TypedDict):
     messages: list[AnyMessage]              # Conversation history
-    jump_to: JumpTo | None                  # Optional control flow override
-    structured_response: ResponseT | None   # Parsed structured output (if enabled)
+    jump_to: JumpTo | None                  # Optional control flow override (ephemeral)
+    structured_response: ResponseT | None   # Parsed structured output (if enabled, omitted from input)
 ```
 
 **Reducers and Aggregation:**
 - `messages` uses `add_messages` reducer: new messages are merged with existing ones, with duplicates by `id` being replaced.
-- `jump_to` is ephemeral: set by middleware to override default routing (e.g., "model", "tools", "end").
-- `structured_response` is cleared each iteration unless explicitly set, preventing stale values after checkpointing.
+- `jump_to` is ephemeral (uses `EphemeralValue`): set by middleware to override default routing (valid destinations: `"model"`, `"tools"`, `"end"`). Clears after each node.
+- `structured_response` is omitted from input schema and cleared each iteration unless explicitly set, preventing stale values after checkpointing.
 
 ### Input and Output Schemas
 
@@ -99,10 +98,10 @@ The factory derives input and output schemas from the base `AgentState` and any 
 
 ```python
 class InputAgentState(TypedDict):
-    messages: list[AnyMessage | dict[str, Any]]  # User can pass plain dicts
+    messages: Required[list[AnyMessage | dict[str, Any]]]  # User can pass plain dicts
 
 class OutputAgentState(TypedDict):
-    messages: list[AnyMessage]
+    messages: Required[list[AnyMessage]]
     structured_response: ResponseT | None  # Only if response_format is set
 ```
 
@@ -115,7 +114,7 @@ All middleware hooks operate on structured request/response objects:
 **ModelRequest** encapsulates everything needed for a model call:
 - `model`: The `BaseChatModel` instance
 - `messages`: Current conversation (excluding system message)
-- `system_message`: Optional system prompt
+- `system_message`: Optional system prompt (preferred over deprecated `system_prompt`)
 - `tools`: Available tools to bind
 - `response_format`: Structured output spec (if enabled)
 - `state`: Current agent state
@@ -128,6 +127,10 @@ Middleware can call `request.override(**changes)` to create a new request immuta
 **ModelResponse** carries the result:
 - `result`: List of messages (usually one `AIMessage`, sometimes with `ToolMessage` for structured output)
 - `structured_response`: Parsed structured output (if `response_format` was set and parsing succeeded)
+
+**ExtendedModelResponse** (from `wrap_model_call`):
+- `model_response`: The underlying `ModelResponse`
+- `command`: Optional `Command` object for additional state updates (e.g., synthetic `ToolMessage`s)
 
 ### Model Binding and Structured Output
 
@@ -176,9 +179,11 @@ def create_agent(
 - **middleware**: Ordered sequence of `AgentMiddleware` instances. Composing happens in list order (first = outermost).
 - **response_format**: Structured output spec. Can be a Pydantic model, `ResponseFormat` subclass, or raw `dict` schema.
 - **state_schema**: Custom state base class extending `AgentState`. Merged with middleware schemas; user's schema wins on conflicts.
+- **context_schema**: Optional schema for runtime context passed to middleware hooks.
 - **checkpointer**: Thread-level persistence (e.g., chat memory across turns).
 - **store**: Cross-thread persistence (e.g., user profiles, document stores).
-- **interrupt_before/after**: Node names to suspend execution for user intervention.
+- **interrupt_before**: Node names to suspend execution before (e.g., `["tools"]` pauses before tool execution).
+- **interrupt_after**: Node names to suspend execution after (e.g., `["model"]` pauses after model call).
 - **debug**: Enable verbose logging.
 - **name**: Graph name; used in LangSmith tracing and subgraph imports.
 - **cache**: Execution cache (LangGraph feature).
@@ -224,7 +229,7 @@ class MyMiddleware(AgentMiddleware):
         return execute(request)  # Call inner layer
 ```
 
-**Async Versions**: Prefix with `a` (e.g., `abefore_agent`, `awrap_model_call`). If only async is defined, sync invocation raises; if only sync is defined, async falls back.
+**Async Versions**: Prefix with `a` (e.g., `abefore_agent`, `awrap_model_call`). If only async is defined, sync invocation raises `NotImplementedError`; if only sync is defined, async falls back to sync.
 
 ### Middleware Composition Rules
 
@@ -232,8 +237,8 @@ class MyMiddleware(AgentMiddleware):
 - **Order**: First middleware in the list becomes the outermost layer.
   - Example: `middleware=[A, B, C]` → `A.before_model → B.before_model → C.before_model`
   - For `wrap_*` hooks (outermost matters for retry/caching): `A.wrap_model_call(request, B.wrap_model_call(request, C.wrap_model_call(request, execute)))`
-- **Sync/Async**: Sync and async paths are kept separate. Each hook can choose to implement sync, async, or both. The factory selects the appropriate variant at runtime.
-- **Commands**: Middleware can return `Command` objects from `wrap_model_call` to update state (e.g., add synthetic tool messages). Commands accumulate inner-first and are applied after the model response.
+- **Sync/Async**: Sync and async paths are kept separate. Each hook can choose to implement sync, async, or both. The factory selects the appropriate variant at runtime based on invocation context (e.g., `stream()` is sync, `astream()` is async).
+- **Commands**: Middleware can return `Command` objects from `wrap_model_call` to update state (e.g., add synthetic tool messages). Commands accumulate inner-first and are applied after the model response via the graph's reducers.
 
 ### Request/Response Immutability
 
@@ -247,6 +252,8 @@ def wrap_model_call(self, request, handler):
     return handler(new_request)
 ```
 
+Direct assignment on `ModelRequest` emits a `DeprecationWarning`.
+
 ### Jump To Control Flow
 
 Middleware node hooks can override routing via the `jump_to` state field:
@@ -258,7 +265,7 @@ def before_model(self, state, runtime):
     return None
 ```
 
-Valid destinations: `"model"`, `"tools"`, `"end"`. The hook method must declare `@before_model(can_jump_to=["end"])` to enable conditional routing.
+Valid destinations: `"model"`, `"tools"`, `"end"`. The hook must declare capability via decorator to use this (support is built-in for node hooks).
 
 ## Core Middleware
 
@@ -291,7 +298,7 @@ The factory ships with a comprehensive middleware library:
 
 ### Conversational Quality
 
-- **HumanInTheLoopMiddleware**: Pause execution to collect human feedback or approval before critical actions.
+- **HumanInTheLoopMiddleware**: Pause execution to collect human feedback or approval before critical actions. Configurable per-tool with custom interrupt predicates and decision handling.
 - **SummarizationMiddleware**: Automatically summarize long conversation histories to manage context length.
 
 ### Data Protection
@@ -332,10 +339,10 @@ Tools are registered at agent creation. Supported formats:
 ### Tool Execution Flow
 
 1. Model returns `AIMessage` with `tool_calls` list.
-2. Conditional routing checks for pending tool calls (not yet executed).
+2. Conditional routing checks for pending tool calls (not yet executed and not structured output tools).
 3. **ToolNode** batches pending calls and executes them in parallel (or sequentially, depending on config).
 4. Execution results are wrapped in `ToolMessage`s and added to state.
-5. Loop back to loop_entry node unless:
+5. Loop back to loop_entry_node unless:
    - All executed tools have `return_direct=True`
    - A structured output tool was executed
    - No pending tool calls remain
@@ -346,7 +353,7 @@ Middleware can add tools dynamically via `request.override(tools=[...])` in `wra
 1. Tools registered upfront at agent creation, OR
 2. Middleware implementing `wrap_tool_call` to execute dynamic tools
 
-If a tool is in the model's binding but not in the `ToolNode`, the factory raises `DYNAMIC_TOOL_ERROR_TEMPLATE` with guidance.
+If a tool is in the model's binding but not in the `ToolNode`, the factory raises `ValueError` with `DYNAMIC_TOOL_ERROR_TEMPLATE` with guidance on resolving the issue.
 
 ## Structured Output Integration
 
@@ -470,7 +477,7 @@ checkpointer = SqliteSaver.from_conn_string(":memory:")
 agent = create_agent(
     model, tools,
     checkpointer=checkpointer,
-    interrupt_before=["model"],  # Pause before model calls
+    interrupt_before=["tools"],  # Pause before tool execution
 )
 
 # Invoke with a thread ID to save state
@@ -479,6 +486,47 @@ result = agent.invoke({"messages": [...]}, config=config)
 
 # Resume later
 result = agent.invoke({"messages": [...]}, config=config)  # Resumes from checkpoint
+```
+
+### Interrupt Points
+
+The factory supports human-in-the-loop workflows via `interrupt_before` and `interrupt_after`:
+
+```python
+agent = create_agent(
+    model, tools,
+    checkpointer=checkpointer,
+    interrupt_before=["tools"],      # Pause before tool calls
+    interrupt_after=["model"],       # Pause after model output
+)
+
+# Check for interrupts
+state = agent.get_state(config)
+if state.values.get("jump_to") == "interrupt":
+    # Let human inspect and modify state
+    ...
+
+# Resume after human decision
+agent.update_state(config, {"messages": [...]})
+result = agent.invoke(None, config=config)
+```
+
+The `HumanInTheLoopMiddleware` provides a higher-level API for tool-specific approval workflows:
+
+```python
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+
+hitl = HumanInTheLoopMiddleware(
+    interrupt_on={
+        "delete_file": True,  # Always interrupt before delete_file
+        "execute_code": {
+            "severity": "high",  # Only interrupt for high-severity code
+            "formatter": lambda req: f"Execute: {req.tool_call['args']}"
+        }
+    }
+)
+
+agent = create_agent(model, tools, middleware=[hitl], checkpointer=checkpointer)
 ```
 
 ## Tracing and Observability
@@ -513,7 +561,7 @@ from langchain.agents.middleware import configure_trace_policy
 configure_trace_policy(TracePolicy(process_inputs=omit_payload))
 ```
 
-This applies to all agents created after the call, even those already instantiated.
+This applies to all agents created after the call, even those already instantiated. The effective policy is resolved at call time, so trace filtering applies dynamically.
 
 ## Error Handling
 

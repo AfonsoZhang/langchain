@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:7a27a082b6fe0666d7a3e17b00aac82017d7095d7cc66a084355eb8c5f47b347",
+  "pageVersion": "sha256:0e272f9b99251d0081deaa16fce181203ec94724952fe8cc27260c4908a54131",
   "claims": [
     {
       "id": "claim_2b394255185b4645a1dcf0e8c628a197",
@@ -193,10 +193,46 @@
           "version": "repo-lines-v1:sha256:e3d0704dff8fca8d0a61d64b2b6b1bd421654204ab5faef64b64dd5b52df2ddf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNzhlNTQ1YjAyMTRlNDM2NDIxYTRiMzBiZDQ0NThjNDgxZGY5OTY5NWRkNjRmZjhkNmM1MDkxMTZjMmE5NTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxY2I2ZmI5YmVjNzJmZjA3ZTY4MDU0N2M3NTAyMzZkYWZmNDMzOWVhZTY5ODBkM2IwOTQwMmRkYmE4YzcwOTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZDE3MWRlNzU0MzFhMDIxYTBkOTRmYTc2ZmFiZjBkNzEzOWM4OThjMWEwYjQ0YjQzY2E2MDkwM2ZhMWI4NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_07bb2650218349c9ba3970b8ae623a97",
+      "statement": "Integration tests use timeout and max_retries parameters on model clients to handle transient failures: timeout specifies request timeout in seconds (typical 10-30 seconds), and max_retries specifies the number of exponential backoff retries for HTTP 429 (rate limit), 503 (service unavailable), connection timeouts, read timeouts, and network errors. VCR cassettes bypass these settings entirely since responses are replayed instantly from disk.",
+      "evidence": [
+        {
+          "resource": "repo://libs/partners/openai/tests/integration_tests/chat_models/test_base.py#L260-L268",
+          "version": "repo-lines-v1:sha256:2ef810b5b8469e5b6de990f59bcfa7a6d91897d62e795792884b8d0cccc305d1:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjA4MDRkZWI0ODUwMDlmMGFlMGM3MmIxZTYwOGU4ZThlMDI1MDg4YjlkY2ZmZjk2NmQwNzRkYzVhZWU1NWU0MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTc4ODMyN2M2NDUwMzY2MTE4MDVhOWE2YjVlZTliN2UwZWM3NzI4YjNkZThlYTZkMTM1ZmY5MGEyY2MyMjNiMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjZhMzE4YzBjOWM4YWQ1YWMyMWIxODNhYzk4MjMyMTQ5ZTQ4NGNiNjRlMjVmNzZjNzRkODM1NDA5MTcxZmYyZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzQzOTQxZjMyMjk2MjAwODIwOTIzZmFmYzViNGNiMzE2Y2YxNGY5NTlhZGUyZWZiMzMwMGNlNzYwMTBkMmE5NiJ9"
+        },
+        {
+          "resource": "repo://libs/partners/openai/tests/integration_tests/chat_models/test_base.py#L293-L305",
+          "version": "repo-lines-v1:sha256:68c21fd5378606ff7a7a21aa59c3de8c390480cfaafdec4dd196638e5cd43eb4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2Y2FjNDMwODRjOWFlNmRkZTNhYjU3Y2U2ODQ2NzliODk5YzU3YTY1NTg5OTY2NTA0MDVlMDgxOWEyOGIwZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2NWFhMTY0NTQ3YmFjOGRmMTljZDVkMGE3ZTE0ZDY0M2E5NjlkZTk1MjZhNWJjNDRiN2UwNzBkZjg5YTFlZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2YTMxOGMwYzljOGFkNWFjMjFiMTgzYWM5ODIzMjE0OWU0ODRjYjY0ZTI1Zjc2Yzc0ZDgzNTQwOTE3MWZmMmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjMDcxYWNhOWI5YzAzNTg2N2EyMmQ1ZWQ2NmM2ODZhYzgxZWFmMThlNWE0ZDA2NDA0ZDFkZWIwNTI4MmRkNmMifQ"
+        },
+        {
+          "resource": "repo://libs/partners/openai/tests/integration_tests/chat_models/test_base.py#L58-L77",
+          "version": "repo-lines-v1:sha256:28cca08d06d5344a7f096b4d2b3dce148ba38e47163dbecb6cae68e2515077ee:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhYTVmMDdkNWFiZjU5NDNiM2ZiMzA1ZjI1MjAwY2IyNTBjOTQ2ZTUzYmNlODczOTAwNzFiMWU1MDllYWQxNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMTY5OTQxMjQyY2I4NmQwMmFmYjIzYzFlYzZiMjk2M2RmM2NiZmU4MTIzMjk2M2M2NDE5NjdiM2I5NjY3ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1N2E4OGI0ODlkNjgxMjhkM2IyNTY0OTNkMTJhN2E1ODc5NTczNmQ1ODI3ZGJmZjA3ZWZiMmFiZmE1MWVhNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5YTUzMGFiN2JlNzczNTA2ZGVlZTNkNWU0MmM0M2I4ZDdiOWNkOTc5YzU4NTJjNmIwYWMzMThkNzQ5ZTkwNjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a377a18f9cb84d5ba55b9abeb7fb30cb",
+      "statement": "Scheduled integration tests must configure appropriate timeout and max_retries to handle rate limiting and transient failures in live API calls. Rate-limited endpoints benefit from higher max_retries values (5+) and longer timeouts (30-60 seconds). VCR cassette tests avoid these network concerns entirely, making them fast and deterministic.",
+      "evidence": [
+        {
+          "resource": "repo://libs/partners/openai/Makefile#L35-L43",
+          "version": "repo-lines-v1:sha256:fecf43d133a0b72243df932394549e0a5902eb879f7164c7eed7d6d2edadec63:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0ZWRmM2ZjZTEyMmUxZDcwZGRhZTQ0ZDU1ZTNkNGE5MTVkNzc5Yjk1YWJmYzkzMDIyMjQxNzQ0YTA2NTljYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDhiZTQwMTJkYzZlODBmMGRhYTAwNWMwYWI5MDBkODY0M2UyMWE5NTVkNDZiYTlkZGJiZDk2ZDVmNDM5Zjg1ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTFhMjk4MDZjNTZhZmI4YTVhY2IyN2ExZTFjNzJjZDAzOWZmYWNlNTlmNzgzODE1YjhlZTZmYWUwNGUyN2M1NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmNlNGVlYjJlZGM5OWFiNzIxYTJmNTJhOGZhODc5YjM0ODY1MzUzNWViZTA4ZTUxNDdmZmE2MzkwM2IxZjRkNSJ9"
+        },
+        {
+          "resource": "repo://libs/partners/openai/tests/conftest.py#L190-L204",
+          "version": "repo-lines-v1:sha256:e1eddc5a41b085268d3db96f1152e60ae2dd6b69320f898d3da34980bdfbbe5d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMDM2NWQxNGM3ZGFiM2Q2NWIyMGVlYjNhZmU3ZTVkNGUzMGU4Zjc5OGU3OWFkMDZlNTk0MjI4Nzc0YTc0ODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5MWU3YzkwZDY2ZTYzNjZmODcxM2EyZjkzMjE1OWY5ZjAxYTk0MzU2ZjIzNGNmODk4YTdjNDliYzdkOTlkMjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczMDMyNWY5ODBiNGFiZTBhNWJmZGViMmQzZWI5MzQ4NzZkM2EwNDMzMjU2NDQ0NzJjMTM2Y2NhMDJiOWE4MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjOGExOTM1MTY1NGUwMmMzY2E1NTBmOTFhYjRmZTkxMGNlN2Y2M2E2Y2YzYmY2MWJiYzY1MWIxZjI1ZjllOTUifQ"
+        },
+        {
+          "resource": "repo://libs/partners/openai/tests/integration_tests/chat_models/test_base.py#L58-L77",
+          "version": "repo-lines-v1:sha256:28cca08d06d5344a7f096b4d2b3dce148ba38e47163dbecb6cae68e2515077ee:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhYTVmMDdkNWFiZjU5NDNiM2ZiMzA1ZjI1MjAwY2IyNTBjOTQ2ZTUzYmNlODczOTAwNzFiMWU1MDllYWQxNmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMTY5OTQxMjQyY2I4NmQwMmFmYjIzYzFlYzZiMjk2M2RmM2NiZmU4MTIzMjk2M2M2NDE5NjdiM2I5NjY3ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1N2E4OGI0ODlkNjgxMjhkM2IyNTY0OTNkMTJhN2E1ODc5NTczNmQ1ODI3ZGJmZjA3ZWZiMmFiZmE1MWVhNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5YTUzMGFiN2JlNzczNTA2ZGVlZTNkNWU0MmM0M2I4ZDdiOWNkOTc5YzU4NTJjNmIwYWMzMThkNzQ5ZTkwNjQifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.0",
-    "at": "2026-09-28T08:35:20.640Z"
+    "at": "2026-10-07T08:30:45.453Z"
   }
 }

@@ -5,7 +5,7 @@ description: "LangChain's GitHub Actions-based CI/CD system automating testing, 
 tags: [ci-cd, github-actions, testing, linting, release, pypi, monorepo, automation]
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+    at: 2026-10-07T08:30:45.453Z
 sources:
   - id: openwiki-source-34e57b5a3a0c875639ab72a7
     resource: repo://.github/scripts/check_diff.py
@@ -31,7 +31,7 @@ sources:
     resource: repo://.github/workflows/pr_labeler.yml
   - id: openwiki-source-12805fbf767dc2a3e238645e
     resource: repo://.github/workflows/pr_lint.yml
-generated: { by: "openwiki/0.5.0", at: "2026-09-28T08:35:20.640Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-10-07T08:30:45.453Z" }
 ---
 
 # CI/CD Workflows: GitHub Actions and Release Process
@@ -87,7 +87,7 @@ Runs matrix tests across Python versions with dependency constraint verification
 1. **Current dependencies**: Runs full test suite against versions in `uv.lock` via `make test PYTEST_EXTRA=-q`
 2. **Minimum dependencies**: Calculates minimum versions from `pyproject.toml` constraints via `get_min_versions.py` script, downgrades via pip, and reruns tests with `make tests PYTEST_EXTRA=-q` to ensure compatibility
 
-The workflow verifies the working directory remains clean (no untracked generated files) after testing.
+The workflow verifies the working directory remains clean (no untracked generated files) after testing. This two-phase approach catches issues where code relies on buggy behavior in older dependencies or where minimum version specifications are too permissive.
 
 ### Pydantic Compatibility Testing (`_test_pydantic.yml`)
 
@@ -133,6 +133,101 @@ The workflow includes a `check-release-options` job:
 
 - Verifies `.github/workflows/_release.yml` dropdown options stay synchronized with actual package directories
 - Prevents stale release options from blocking valid releases
+
+## Integration Testing Workflow (`integration_tests.yml`)
+
+The scheduled integration testing workflow runs live integration tests against real APIs with valid credentials. This supplements VCR cassette testing by validating actual behavior against live services.
+
+### Scheduling and Manual Triggers
+
+- **Scheduled**: Runs daily at 1 PM UTC (9 AM EDT / 6 AM PDT) via cron schedule
+- **Manual dispatch**: Can be triggered on-demand via GitHub Actions UI
+- **Fork safety**: Scheduled runs only execute on the main repository; forks can still manually trigger runs
+
+### Matrix Generation
+
+The workflow starts with a `compute-matrix` job that generates test parameters:
+
+**Default configuration** (9 partner libraries):
+- `libs/partners/openai`
+- `libs/partners/anthropic`
+- `libs/partners/fireworks`
+- `libs/partners/groq`
+- `libs/partners/mistralai`
+- `libs/partners/xai`
+- `libs/partners/google-vertexai`
+- `libs/partners/google-genai`
+- `libs/partners/aws`
+
+**Python versions**: 3.10 and 3.14 (default); override via input
+
+**Dispatch options**:
+- Select individual libraries from dropdown
+- Exclude specific libraries from all-run (e.g., `exclude: openai,anthropic`)
+- Override working-directory to arbitrary path
+- Override Python versions
+
+### Test Execution and Library Selection
+
+The `integration-tests` job executes for each matrix combination:
+
+1. **Checkout main repo**: Clone the main langchain repository
+2. **Checkout external repos**: Fetch google-genai, google-vertexai, and aws packages from separate repositories
+3. **Reorganize external packages**: Move external library files into `libs/partners/` directory structure to integrate with main monorepo
+4. **Install dependencies**: Run `uv sync --group test --group test_integration` within each package
+5. **Overlay local core**: For external packages without `[tool.uv.sources]` declarations, explicitly install local editable versions of core and standard-tests
+6. **Execute tests**: Run `make integration_tests` within the package directory
+
+### Concurrency and Credential Management
+
+- **Concurrency locks**: Grouped per `(working-directory, python-version)` to serialize same-package tests across different workflow runs
+- **Within-run parallelism**: Different Python versions run in parallel within a single workflow execution
+- **Credential scope**: Tests run in `Scheduled testing` environment, scoped to receive 30+ API credential secrets:
+  - Model API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, FIREWORKS_API_KEY, etc.
+  - Search/data APIs: GOOGLE_API_KEY, EXA_API_KEY, MONGODB_ATLAS_URI
+  - Cloud credentials: AWS keys, Azure OpenAI credentials, Google Cloud credentials
+  - LangSmith tracing: LANGSMITH_API_KEY, LANGSMITH_GATEWAY credentials
+  - Special resources: ANTHROPIC_FILES_API_IMAGE_ID, AZURE_OPENAI_CHAT_DEPLOYMENT_NAME
+
+### LangSmith Integration
+
+Integration tests report results to LangSmith tracing:
+- LANGSMITH_PROJECT: `scheduled-testing-py` by default
+- Tags include package name, Python version, and commit SHA
+- Metadata includes GitHub run ID and URL for correlation
+- Enables failure investigation via trace history
+
+### Dependent Package Testing
+
+The `test-dependents` job validates external packages depending on LangChain:
+
+- Currently tests `deepagents` (requires Python 3.11+)
+- Checks out external repo and local LangChain core
+- Installs external package with test dependencies
+- Overlays local langchain-core and langchain_v1 editable installs
+- Runs `make test` to catch breaking changes before release
+
+## Dependency Management: uv.lock and Version Pinning
+
+All CI jobs set `UV_FROZEN=true` to ensure reproducible builds:
+
+- Locks all transitive dependencies to versions specified in `uv.lock`
+- Prevents silent upgrades of transitive dependencies
+- Ensures CI environment matches local developer environments
+
+**Two-phase dependency testing**:
+1. **Current dependencies**: Validates against locked versions in `uv.lock`
+2. **Minimum dependencies**: Downgrades to minimum supported versions from `pyproject.toml` constraints and retests
+
+This approach catches issues where:
+- Code accidentally relies on newer behavior in transitive dependencies
+- Minimum version specifications are too loose (e.g., `>=2.0.0` when code requires `2.5.0`)
+- Package constraints conflict with actual usage
+
+The `get_min_versions.py` script calculates minimum versions by:
+1. Reading `pyproject.toml` version constraints (e.g., `pydantic>=2.0.0`)
+2. Querying PyPI for actual minimum released versions satisfying those constraints
+3. Supporting two modes: `pull_request` (lenient, warns on prereleases) and `release` (strict, fails on any prerelease)
 
 ## Release Workflow (`_release.yml`)
 
@@ -201,183 +296,91 @@ Security rationale: Separates build (no credentials) from publishing (trusted pu
 - Only runs for `libs/core` releases
 - Tests previously-published partner packages (currently anthropic, openai) against new core
 - Fetches latest non-yanked published partner tag from git, installs new core wheel, runs tests
-- Can skip per-partner via `skip-prior-published-package-checks` input (options: none, anthropic, openai, all)
 
-**Job: `test-dependents`**:
-- Only runs for `libs/core` or `libs/langchain_v1` releases
-- Checks external dependent packages (currently deepagents)
-- Tests Python 3.11 and 3.13
-- Ensures breaking changes are caught before publish
+## Troubleshooting CI Issues
 
-## Integration Testing (`integration_tests.yml`)
+### Debugging Matrix Generation
 
-Scheduled daily (1 PM UTC) with manual dispatch override capability.
+If tests aren't running for expected packages:
 
-### Test Matrix Generation
+1. Check `.github/scripts/check_diff.py` for package directory configuration
+2. Verify changed files match package directories (e.g., changes under `libs/partners/openai/` affect `libs/partners/openai`)
+3. Run check_diff.py locally with a subset of files to test matrix logic
+4. Check `check-release-options` job for dropdown synchronization issues
 
-**Job: `compute-matrix`**:
+### Local Simulation of CI Workflows
 
-- **Default scope**: Tests 9 partner libraries (OpenAI, Anthropic, Fireworks, Groq, MistralAI, XAI, Google VertexAI, Google GenAI, AWS)
-- **Python versions**: 3.10 and 3.14 by default; overridable via input
-- **Selective testing**: Can select single library, exclude libraries, or override Python versions
-- **Scope security**: Only runs on main repository; manual dispatch allowed from forks
+Reproduce unit tests locally:
 
-### Integration Test Execution
+```bash
+# Install dependencies
+cd libs/core
+uv sync --all-groups
 
-**Job: `integration-tests`**:
+# Run unit tests (same as CI)
+make test PYTEST_EXTRA=-q
 
-- Checks out primary monorepo plus external google-genai, google-vertexai, and langchain-aws repositories
-- Reorganizes external repos into local partner directories for unified testing
-- Authenticates to Google Cloud and AWS
-- Runs per-package `make integration_tests` with all live API credentials injected
-- Uses concurrency locks per (package, python-version) to serialize same-package runs and prevent credential conflicts
-- Includes special installation logic: overlays local editable core and standard-tests packages atop checked-out partner versions
+# Simulate minimum version testing
+VIRTUAL_ENV=.venv uv pip install packaging tomli requests
+python_version="$(python --version | awk '{print $2}')"
+min_versions="$(./.venv/bin/python ../.github/scripts/get_min_versions.py pyproject.toml pull_request $python_version)"
+VIRTUAL_ENV=.venv uv pip install $min_versions
+make tests PYTEST_EXTRA=-q
+```
 
-**Credentials**: Receives 30+ environment variables covering OpenAI, Anthropic, Google, AWS, Azure, Groq, MistralAI, HuggingFace, Mistral, Together, Cohere, and more.
+Reproduce linting locally:
 
-## Auto-Labeling Workflows
+```bash
+# Install lint and typing tools
+uv sync --group lint --group typing
 
-### Issue Auto-Labeling (`auto-label-by-package.yml`)
+# Run linting
+make lint_package
+make lint_tests
+```
 
-Fires when issues are opened or edited:
+### Handling Matrix Configuration Issues
 
-1. Parses issue body for `## Package` section
-2. Supports both dropdown (single select) and checkbox (multi-select) formats
-3. Maps package name (e.g., "langchain-openai") to label via JSON mapping table (e.g., "openai")
-4. Adds/removes labels to match selected package(s)
+**Problem**: Test matrix includes unexpected packages
+- Check if changes to core or shared packages affect dependent calculations
+- Review `IGNORE_CORE_DEPENDENTS` flag in check_diff.py
+- Verify `IGNORED_PARTNERS` list for exclusions
 
-### PR Title Linting (`pr_lint.yml`)
+**Problem**: Pydantic compatibility tests fail
+- Check `_get_pydantic_test_configs()` in check_diff.py for version range calculation
+- Ensure `pyproject.toml` constraints include expected Pydantic range
+- Verify `uv.lock` contains packages for min/max versions
 
-Enforces Conventional Commits 1.0.0 format on all pull request titles:
+**Problem**: Integration tests timeout or fail sporadically
+- Check credential secret configuration in `Scheduled testing` environment
+- Verify external repository checkouts (google-genai, google-vertexai, langchain-aws) have access
+- Review concurrency locks to prevent parallel access to shared credentials
+- Check LangSmith project limits (scheduled-testing-py)
 
-- **Format**: `<type>[optional scope]: <description>` (e.g., `feat(core): add multi-tenant support`)
-- **Allowed types**: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, release, hotfix
-- **Optional scope**: Scopes for specific packages (core, langchain, anthropic, openai, etc.) or cross-cutting concerns (infra, deps, partners)
-- **Breaking changes**: Append `!` after type/scope (e.g., `feat!: remove deprecated API`)
-- **Release commits**: Must be `release(scope): x.y.z` format
-- **Validation**: Uses `amannn/action-semantic-pull-request` with empty scope rejection
+### Common CI Failures
 
-Empty scope parentheses are rejected; PR must either omit parentheses (no scope) or provide a valid scope.
+**"working tree not clean"**: 
+- Test generated files without committing them
+- Check `git status` in test output
+- Verify `make test` target doesn't create artifacts
 
-### PR Labeling (`pr_labeler.yml`)
+**Minimum version test fails**:
+- Check if test requires features from newer dependency versions
+- Review `get_min_versions.py` output for unexpected minimum versions
+- Verify `pyproject.toml` constraints match actual dependency usage
 
-Unified PR labeler applying size, file-based, title-based, and contributor classification:
+**Release workflow blocked**:
+- Verify version in `pyproject.toml` matches input version
+- Check PyPI to ensure version not already published
+- Review prerelease dependencies via `pip freeze` on built wheel
+- Confirm release branch is master or enable `dangerous-nonmaster-release`
 
-- File-based labels: Maps changed file paths to package labels
-- Size labels: Computes PR size (small, medium, large) from diff statistics
-- Title-based labels: Detects certain patterns in PR title
-- Contributor classification: Checks org membership to tag external contributions (via GitHub App token)
-- Uses concurrency locks to prevent race conditions
-- Consolidates multiple prior workflows into single sequential run
+### Monitoring Scheduled Integration Tests
 
-## OpenWiki Auto-Update (`openwiki-update.yml`)
+Integration tests run daily and should be monitored:
 
-Runs on schedule (8 AM UTC daily) or manual dispatch:
-
-1. Checks out full repository history via `fetch-depth: 0` (required for diff-against-HEAD)
-2. Installs Node.js and OpenWiki CLI (@0.5.0) with optional Mermaid diagram validation
-3. Runs `openwiki code --update --print` to regenerate documentation
-4. Removes transient state file (`.run.json`)
-5. Creates/updates pull request with changes via `peter-evans/create-pull-request@v8.1.1`
-6. Preserves partial progress on failure: if OpenWiki run fails, the PR intentionally preserves only pages completed before the failure, allowing them to become baseline for the next scheduled run
-
-Uses LangSmith tracing for observability (OPENWIKI_LANGSMITH_API_KEY, LANGSMITH_API_KEY).
-
-## Dependency Pinning & Version Management
-
-### Frozen Dependency Locks
-
-All CI jobs set `UV_FROZEN=true` and `UV_NO_SYNC=true` (when applicable):
-
-- Ensures reproducible builds against locked versions in `uv.lock`
-- Prevents transitive dependency surprises in CI
-- Each job explicitly pins Python version and dependency revisions
-
-### Minimum Version Testing
-
-The `get_min_versions.py` script extracts version constraints from `pyproject.toml` and queries PyPI for minimum published versions satisfying those constraints.
-
-Example: If constraint is `langchain-core>=0.3.0,<1.0`, the script finds and installs the earliest 0.3.* release.
-
-Two modes:
-- `pull_request`: Tests against minimum with some leniency (used in PR CI)
-- `release`: Stricter testing with prerelease rejection (used in release validation)
-
-## Release Policy
-
-### Semantic Versioning
-
-**Core** (`libs/core`) follows strict semantic versioning:
-- Major version: Breaking changes
-- Minor version: New features (backward compatible)
-- Patch version: Bug fixes
-
-**Partner packages** and other libraries align with core releases:
-- LangChain follows core versioning for tight integration
-- Partners maintain independent versioning but coordinate with core releases
-
-### Release Branching
-
-- Releases only proceed from `master` branch (default) or explicitly via `dangerous-nonmaster-release` flag (hotfixes only)
-- Version must match `pyproject.toml` or operator provides override
-- PyPI availability double-checked to prevent accidental re-publishes
-
-### Pre-Release Support
-
-- Supports alpha/beta/rc versions (e.g., `0.1.0-rc1`, `0.1.0a1`)
-- Pre-release detection normalizes hyphen/underscore variants per PEP 440
-- Optional `allow-prereleases` flag permits transitive prerelease dependencies during alpha cycles
-- Final releases block prerelease dependencies unless explicitly allowed
-
-## Configuration & Operations
-
-### Environment Variables
-
-**Frozen dependency control**:
-- `UV_FROZEN`: Prevents automatic dependency resolution
-- `UV_NO_SYNC`: Skips uv sync in build steps (manual sync used instead)
-
-**Linting & formatting**:
-- `RUFF_OUTPUT_FORMAT: github`: Inline GitHub annotations for linter violations
-
-**LangSmith tracing** (optional):
-- `LANGSMITH_API_KEY`: Optional tracing of CI workflows themselves
-- `LANGCHAIN_TRACING_V2: true`: Enable tracing
-- `LANGCHAIN_PROJECT: openwiki`: LangSmith project name
-
-### GitHub Actions Permissions
-
-Workflows follow principle of least privilege:
-
-- **Default**: `contents: read` (read-only)
-- **PR labeler**: `pull-requests: write`, `issues: write`
-- **Release**: `id-token: write` (trusted publishing), `contents: write` (GitHub Release creation)
-- **OpenWiki update**: `contents: write`, `pull-requests: write`
-
-Isolated jobs (build, testing) receive no write permissions; publishing jobs run in separate jobs with restricted scope.
-
-### Custom Actions
-
-**`uv_setup`** (`.github/actions/uv_setup`):
-- Sets up Python via official `setup-python` action
-- Configures `uv` tool with optional caching
-- Supports per-package cache suffixes to avoid cross-contamination
-- Parameters: `python-version`, `cache-suffix`, `working-directory`, `enable-cache`
-
-## Important Invariants & Failure Modes
-
-1. **No caching in release pre-checks**: Missing dependencies would be masked by cached venvs, allowing broken releases to publish
-2. **Minimum version downgrade isolation**: Minimum version tests reinstall packages in fresh virtual environment context, not via constraint relaxation alone
-3. **Separate build/publish jobs**: Build job has no PyPI credentials; publishing job has no build tools, preventing supply-chain attacks
-4. **Change detection scope**: VCR and extended test matrices only include packages with appropriate markers; adding test files without markers won't trigger corresponding test suites
-5. **Prerelease blocking**: Stable releases reject any prerelease dependencies, preventing version resolution issues in downstream users
-6. **Tag/version synchronization**: Release workflow validates git tags match expected version format before publishing, catching manual tag drift
-
-## Extension Points
-
-1. **Adding new package types**: Update `check_diff.py` to recognize new directories and map them to appropriate test matrices
-2. **Adding partners to release testing**: Update `test-prior-published-packages-against-new-core` matrix and `skip-prior-published-package-checks` input options (keep in sync)
-3. **Adding new linting/type checkers**: Extend `_lint.yml` job steps and dependency groups; ensure `make lint_package` target exists
-4. **Adding integration test credentials**: Add environment variable to `integration_tests.yml` job and ensure `make integration_tests` target handles optional credentials
-5. **Custom test suites**: Create `extended_testing_deps.txt` in package directory and define `make extended_tests` target
-6. **OpenWiki pages**: Add to `openwiki/` directory; auto-updated on each scheduled run
+1. Check GitHub Actions tab for "⏰ Integration Tests" workflow
+2. Review failed steps in test-dependents or integration-tests jobs
+3. Check LangSmith project `scheduled-testing-py` for trace data
+4. For credential issues, verify `Scheduled testing` environment secrets haven't expired
+5. For external repo issues, verify google-genai and langchain-aws repositories are accessible

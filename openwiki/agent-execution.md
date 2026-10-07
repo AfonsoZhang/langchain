@@ -5,13 +5,13 @@ description: Traces the runtime lifecycle of an agent from user input through mo
 tags: [agent-execution, control-flow, state-machine, loop-control, tool-dispatch, middleware, langchain]
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+    at: 2026-10-07T08:30:45.453Z
 sources:
   - id: openwiki-source-71e882e1ac9757ea8e959a7c
     resource: repo://libs/langchain_v1/langchain/agents/factory.py
   - id: openwiki-source-03e8ca0eebe37feda8566793
     resource: repo://libs/langchain_v1/langchain/agents/middleware/types.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-21T08:30:16.745Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-10-07T08:30:45.453Z" }
 ---
 
 ## Overview
@@ -228,12 +228,12 @@ The loop terminates when any of these are true:
 
 ## Tool Execution
 
-When the model requests tools, the `ToolNode` executes them. This node is responsible for:
+When the model requests tools, the `ToolNode` executes them sequentially or in parallel. This node is responsible for:
 
-1. **Receiving tool calls**: Unpacked from the latest `AIMessage`.
-2. **Looking up tools**: By name in the `tools_by_name` registry.
-3. **Parallel execution**: Tools are invoked concurrently when possible.
-4. **Wrapping results**: Each tool result becomes a `ToolMessage`.
+1. **Receiving tool calls**: Extracted from the latest `AIMessage.tool_calls` list
+2. **Looking up tools**: By name in the `tools_by_name` registry (built-in tools + middleware tools)
+3. **Parallel execution**: Tools are invoked concurrently when possible via `asyncio.gather()` or `concurrent.futures`
+4. **Wrapping results**: Each tool result becomes a `ToolMessage` with the tool output and original `tool_call_id`
 
 ### Tool Call Request and Response
 
@@ -244,17 +244,30 @@ class ToolCallRequest:
     tool_call: dict  # {"id": "...", "name": "...", "args": {...}}
     tool: BaseTool
     state: AgentState[Any]
-    runtime: Runtime[ContextT]
+    runtime: Runtime[ContextT]  # Provides access to tool output streaming
 ```
 
 Middleware can intercept with `wrap_tool_call(request, handler)` to:
-- Retry on failure (call `handler` multiple times).
-- Validate or modify arguments.
-- Cache results.
-- Skip execution (return a synthetic `ToolMessage`).
-- Throw custom exceptions.
+- **Retry on failure**: Call `handler` multiple times with exponential backoff
+- **Validate or modify arguments**: Pre-process args before tool execution
+- **Cache results**: Check cache before invoking, cache after success
+- **Skip execution**: Return a synthetic `ToolMessage` (e.g., HITL approval, simulated results)
+- **Log and monitor**: Wrap execution with observability hooks
+- **Throw custom exceptions**: Convert tool errors to application-level exceptions
 
-The handler returns a `ToolMessage` or `Command` that is added to state.
+The handler returns a `ToolMessage` or `Command` that is added to the agent state. If `Command` is returned with `update={"messages": [msg]}`, the message is appended (via reducer) to the messages list.
+
+**Tool execution flow:**
+
+1. Model returns `AIMessage` with `tool_calls = [{"id": "tc1", "name": "tool_a", "args": {...}}, ...]`
+2. Agent routes to tools node
+3. For each tool call:
+   - `wrap_tool_call` middleware wraps (if configured)
+   - Tool arguments are validated against the tool's `args_schema`
+   - Tool is invoked: `tool.invoke(args, config=runtime_config)`
+   - Result is wrapped in `ToolMessage(content=result, tool_call_id="tc1", name="tool_a")`
+4. All `ToolMessage` objects are collected and added to state via `add_messages` reducer
+5. Agent checks exit conditions (return_direct, structured output, etc.)
 
 ### Structured Output Tools
 
@@ -355,22 +368,96 @@ The `messages` field uses a reducer function (`add_messages`) to accumulate rath
 
 Other state fields like `structured_response` and `jump_to` are replaced, not accumulated.
 
-## Error Handling
+## Error Handling and Recovery
 
 ### Model Invocation Errors
 
-Exceptions during model invocation propagate unless `wrap_model_call` middleware catches them. A middleware can implement retry logic by catching exceptions and calling the handler again with a modified request.
+Exceptions during model invocation propagate unless `wrap_model_call` middleware catches and recovers from them. A middleware can implement retry logic by catching exceptions and calling the handler again with a modified request.
+
+**Error recovery patterns:**
+
+1. **Retry with backoff**: Call handler multiple times with exponential delays
+2. **Fallback model**: Catch exception, switch model via `request.override(model=fallback)`, retry
+3. **Synthetic response**: Return a safe `ModelResponse` with fallback content instead of retrying
+
+```python
+class FailoverMiddleware(AgentMiddleware):
+    def wrap_model_call(self, request, handler):
+        try:
+            return handler(request)
+        except Exception as e:
+            print(f"Model failed: {e}, using fallback")
+            return ModelResponse(
+                result=[AIMessage(content="Service unavailable, using cache")]
+            )
+```
 
 ### Tool Execution Errors
 
-By default, exceptions during tool execution propagate. The `ToolNode` accepts a `handle_tool_errors` parameter to return error messages instead of crashing. Middleware can wrap tools with `wrap_tool_call` to implement custom error strategies.
+By default, exceptions during tool execution propagate and halt the agent. Error handling strategies:
+
+1. **Propagate (default)**: Tool exception halts the loop; caught at invoke level
+2. **Return error message**: Tool's `handle_tool_error` returns an error message string, loop continues
+3. **Middleware interception**: `wrap_tool_call` middleware catches, retries, or synthesizes result
+
+**Tool-level configuration:**
+
+```python
+@tool
+def risky_operation(x: int) -> str:
+    # Tool with error handling via handle_tool_error string
+    return f"Result: {x}"
+
+# Or with callable handler:
+def handle_error(error: Exception) -> str:
+    return f"Tool failed gracefully: {str(error)}"
+
+risky_tool = risky_operation.with_handle_tool_error(handle_error)
+```
+
+**Middleware error handling:**
+
+```python
+class ToolErrorMiddleware(AgentMiddleware):
+    def wrap_tool_call(self, request, handler):
+        try:
+            return handler(request)
+        except Exception as e:
+            return ToolMessage(
+                content=f"Tool {request.tool_call['name']} failed: {e}",
+                tool_call_id=request.tool_call["id"],
+                name=request.tool_call["name"],
+                status="error"  # Mark as error for visibility
+            )
+```
 
 ### Structured Output Validation Errors
 
-If a structured output tool's arguments fail to parse:
-1. If `handle_errors=True` on the `ToolStrategy`, synthesize a `ToolMessage` with the error.
-2. If `handle_errors=False`, raise `StructuredOutputValidationError`.
-3. The loop continues (or exits) based on the strategy configuration.
+When a structured output tool's arguments fail schema validation:
+
+1. **`handle_errors=True`** (retry mode): Synthesize a `ToolMessage` with error details and formatted hint; loop continues so model can retry
+2. **`handle_errors=False`** (strict mode): Raise `StructuredOutputValidationError` immediately; loop exits with error
+3. **`handle_errors=<callable>`**: Call the function with exception; if returns True, retry; if returns str, use as error message
+
+```python
+agent = create_agent(
+    model=model,
+    response_format=ToolStrategy(
+        schema=MySchema,
+        handle_errors=True  # On validation error, inject error message and retry
+    )
+)
+```
+
+### Invalid Tool Calls
+
+If the model generates a tool call with malformed arguments (e.g., JSON truncated by token limit), the agent automatically repairs the message history:
+
+1. **Detection**: `_patch_invalid_tool_calls()` identifies `AIMessage.invalid_tool_calls`
+2. **Recovery**: Inserts synthetic `ToolMessage` with status="error" for each invalid call
+3. **Retry**: Passes the repaired history to the model on next invocation
+
+This ensures the model receives feedback about which calls failed and can regenerate them correctly.
 
 ## State Machine View
 
@@ -426,52 +513,235 @@ State machine showing the progression from agent start through model invocation,
 - **Messages** (`/openwiki/messages.md`): Message types, serialization, and conversation management.
 - **Agent Factory** (`/openwiki/agent-factory.md`): How `create_agent()` constructs the StateGraph from configuration.
 
-## Configuration and Operations
+## Invocation Patterns
 
-### Recursion Limit
+### invoke() and stream() Interfaces
 
-The graph is compiled with `recursion_limit=9_999` to allow very long agent loops (hundreds of tool calls). This prevents premature termination while still protecting against infinite loops.
+The compiled agent graph is a `CompiledStateGraph` (from LangGraph) supporting both synchronous and asynchronous execution:
 
-### Checkpointing and Interrupts
+**`invoke(input, config=None)` – Synchronous Blocking Execution**
+
+Executes the entire agent loop and returns the final state. Input is expected as a dict with a `"messages"` key (required) and optional fields like `"structured_response"`. The full conversation history and final structured output (if configured) are returned.
+
+```python
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What is 2+2?"}]},
+    config={"recursion_limit": 50}  # Override default 9999
+)
+# result = {"messages": [...], "structured_response": {...} or None}
+```
+
+**`stream(input, config=None, stream_mode="updates")` – Synchronous Streaming**
+
+Streams updates as the agent executes, yielding intermediate state snapshots after each node completes. Each chunk shows partial progress: model output, tool invocations, state modifications. Stream modes include `"updates"` (state deltas per node), `"values"` (full state), and `"debug"` (detailed step info).
+
+```python
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "Search for Python"}]},
+    stream_mode="updates"
+):
+    # chunk = {"node_name": {"messages": [...], ...}, ...}
+    print(chunk)
+```
+
+**`stream_events(input, version="v2", stream_mode="events")` – Event-Streaming (Advanced)**
+
+Yields fine-grained events (LangSmith events) at component boundaries. Version `"v3"` includes stream transformers (e.g., `ToolCallTransformer`) that project tool calls into a high-level `tool_calls` attribute on the run stream for structured inspection.
+
+```python
+for event in agent.stream_events(
+    {"messages": [HumanMessage("help")]},
+    version="v3"
+):
+    if event["event"] == "on_chat_model_stream":
+        print(f"Token: {event['data']['chunk'].content}")
+```
+
+**Async variants: `ainvoke()`, `astream()`, `astream_events()`**
+
+Identical semantics but use `async`/`await`. Middleware can implement `awrap_model_call` and `awrap_tool_call` for async optimization.
+
+### Configuration and Operations
+
+#### Recursion Limit
+
+The graph is compiled with `recursion_limit=9_999` to allow very long agent loops (hundreds of tool calls). This prevents premature termination while still protecting against infinite loops. Can be overridden per invocation via `config={"recursion_limit": N}`.
+
+#### Checkpointing and Interrupts
 
 The agent graph can be compiled with a `Checkpointer` to persist state between invocations, and `interrupt_before`/`interrupt_after` lists to pause execution at specific nodes for human-in-the-loop workflows.
 
-### Debug Mode
+**Interrupt Points:**
+- `interrupt_before=["model"]` – Pause before model invocation (read state, then resume)
+- `interrupt_after=["tools"]` – Pause after tool execution (inspect results, inject human feedback)
+
+**Resume workflow:**
+1. Call `.get_state(config)` to read the paused state
+2. Optionally modify state (e.g., inject human feedback as UserMessage)
+3. Call `.invoke(updated_state, config)` to resume from the checkpoint
+
+#### Debug Mode
 
 Passing `debug=True` to `create_agent()` enables verbose logging of node execution, state updates, and edge traversals, useful for understanding the control flow during development.
 
-## Example: Multi-Turn Agent with Tool Retry
+## Examples
+
+### Example 1: Basic Agent Invocation
+
+```python
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two numbers."""
+    return a * b
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5-20250929",
+    tools=[add, multiply],
+    system_prompt="You are a math assistant. Use tools to solve problems."
+)
+
+# Synchronous blocking call
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "What is (5 + 3) * 2?"}]
+})
+print("Final messages:", result["messages"])
+print("Last message:", result["messages"][-1].content)
+```
+
+### Example 2: Streaming with Intermediate Updates
+
+```python
+# Stream updates as the agent executes
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "Calculate 100 * 50"}]},
+    stream_mode="updates"
+):
+    # Each chunk shows state changes at a specific node
+    if "model" in chunk:
+        print("Model output:", chunk["model"]["messages"][-1])
+    elif "tools" in chunk:
+        print("Tool result:", chunk["tools"]["messages"][-1])
+```
+
+### Example 3: Middleware with Retry Logic
 
 ```python
 from langchain.agents import create_agent, AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest
 
 class RetryMiddleware(AgentMiddleware):
+    """Retry model calls on failure."""
+    
     def wrap_model_call(self, request, handler):
         for attempt in range(3):
             try:
                 response = handler(request)
-                # Check if response has tool calls
-                if response.result and response.result[0].tool_calls:
-                    return response
-                # No tool calls on success, return
                 return response
             except Exception as e:
                 if attempt == 2:
                     raise
-                # Retry by calling handler again
+                print(f"Retry attempt {attempt + 1} after error: {e}")
+                # Handler will be called again on next iteration
 
 agent = create_agent(
     model="anthropic:claude-sonnet-4-5-20250929",
-    tools=[my_tool1, my_tool2],
+    tools=[add, multiply],
     middleware=[RetryMiddleware()],
-    system_prompt="You are a helpful assistant that uses tools."
+    system_prompt="You are a helpful assistant."
 )
 
-# Invoke with a user message; loop runs until no tools are called or error occurs
-result = agent.invoke({"messages": [{"role": "user", "content": "Help me with X"}]})
-for msg in result["messages"]:
-    print(f"{msg.type}: {msg.content}")
+result = agent.invoke({"messages": [{"role": "user", "content": "Add 5 and 7"}]})
 ```
 
-This example shows how middleware intercepts the model call to implement retry logic that re-invokes the handler on failure.
+### Example 4: Human-in-the-Loop with Interrupts
+
+```python
+from langchain_core.messages import HumanMessage
+
+# Create agent with interrupts after tools
+agent_with_checkpoints = create_agent(
+    model="anthropic:claude-sonnet-4-5-20250929",
+    tools=[add, multiply],
+    interrupt_after=["tools"],  # Pause after each tool execution
+    checkpointer=persistent_checkpointer  # Requires a LangGraph Checkpointer
+)
+
+config = {"configurable": {"thread_id": "user_123"}}
+
+# First invocation: runs model and tools, pauses
+result1 = agent_with_checkpoints.invoke(
+    {"messages": [{"role": "user", "content": "Add 10 and 20"}]},
+    config=config
+)
+print("After tools:", result1["messages"][-1])
+
+# Human reviews and approves
+state = agent_with_checkpoints.get_state(config)
+print("Current state:", state.values)
+
+# Resume execution (continues to end)
+result2 = agent_with_checkpoints.invoke(
+    None,  # Use None to resume from checkpoint
+    config=config
+)
+print("Final result:", result2["messages"][-1])
+```
+
+### Example 5: Structured Output with Tool Strategy
+
+```python
+from pydantic import BaseModel
+
+class WeatherReport(BaseModel):
+    """Final weather report."""
+    temperature: int
+    condition: str
+    location: str
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5-20250929",
+    tools=[get_weather],
+    response_format=WeatherReport,
+    system_prompt="Get the weather and return a structured report."
+)
+
+result = agent.invoke({"messages": [{"role": "user", "content": "What's the weather in NYC?"}]})
+print("Structured response:", result["structured_response"])
+print("Type:", type(result["structured_response"]))  # <class 'WeatherReport'>
+```
+
+### Example 6: Streaming Tool Calls with Events
+
+```python
+# Use stream_events with version="v3" for detailed tool call tracking
+for event in agent.stream_events(
+    {"messages": [{"role": "user", "content": "Add 5 and 10"}]},
+    version="v3"
+):
+    if event["event"] == "on_chain_start":
+        if "tool_calls" in event["metadata"].get("ls_path", ""):
+            print(f"Tool call started: {event}")
+    elif event["event"] == "on_chain_end":
+        if "tool_calls" in event["metadata"].get("ls_path", ""):
+            print(f"Tool call completed: {event['data']}")
+
+# Or use the specialized ToolCallStream projection
+run = agent.stream_events(
+    {"messages": [{"role": "user", "content": "Add 5 and 10"}]},
+    version="v3"
+)
+for tool_call_stream in run.tool_calls:
+    print(f"Tool: {tool_call_stream.tool_name}")
+    print(f"Call ID: {tool_call_stream.tool_call_id}")
+    print(f"Output deltas: {list(tool_call_stream.output_deltas)}")
+    print(f"Error: {tool_call_stream.error}")
+    print(f"Completed: {tool_call_stream.completed}")
+```

@@ -3,6 +3,9 @@ type: "Reference"
 title: "Agent Middleware: Composable Request/Response Processing"
 description: "Comprehensive guide to the middleware composition system: hook types, typing, payload transformations, and practical examples for hooking into model calls, tool calls, and agent lifecycle."
 tags: [agent-middleware, request-interception, composition, error-handling, human-in-the-loop, lifecycle-hooks]
+verified:
+  - by: openwiki/0.5.0
+    at: 2026-10-07T08:30:45.453Z
 sources:
   - id: openwiki-source-71e882e1ac9757ea8e959a7c
     resource: repo://libs/langchain_v1/langchain/agents/factory.py
@@ -14,10 +17,7 @@ sources:
     resource: repo://libs/langchain_v1/langchain/agents/middleware/tool_error.py
   - id: openwiki-source-03e8ca0eebe37feda8566793
     resource: repo://libs/langchain_v1/langchain/agents/middleware/types.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-28T08:35:20.640Z" }
-verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+generated: { by: "openwiki/0.5.0", at: "2026-10-07T08:30:45.453Z" }
 ---
 
 ## Overview
@@ -350,6 +350,66 @@ State updates from hooks are merged using LangGraph reducers. For the `messages`
 - **Non-reducer fields**: Later commands overwrite earlier ones (outermost middleware wins). This means if multiple middleware return commands with state updates to the same field (other than `messages`), the outermost middleware's value takes precedence.
 
 Example: If M1 and M3 both return commands with `{"status": "value"}`, M1's value (outermost) is used.
+
+## Middleware Ordering: Dependencies, Interference, and Debugging
+
+### Composition Order Principles
+
+**First-Registered = Outermost**: The ordering of middleware in the `create_agent(middleware=[...])` list determines composition order. Middleware listed first becomes the outermost layer and receives control first, allowing it to intercept, wrap, or override behavior from inner middleware. This has profound implications for:
+
+1. **Retry vs. Error Handling**: Place retry middleware *outside* (before) error-handling middleware so retries can succeed before errors are converted to messages.
+   ```python
+   middleware = [
+       ModelRetryMiddleware(),        # Outermost: retry first
+       ModelFallbackMiddleware(),     # Middle: try fallback if retry exhausted
+       ToolErrorMiddleware(),         # Innermost: convert errors to messages
+   ]
+   ```
+
+2. **Human-in-the-Loop vs. Automatic Decisions**: Place human approval outside automatic middleware to give humans final say.
+   ```python
+   middleware = [
+       HumanInTheLoopMiddleware(),    # Outermost: human reviews first
+       ToolErrorMiddleware(),         # Inner: auto-recover from errors
+   ]
+   ```
+
+3. **Caching vs. Business Logic**: Place caching middleware outside business-logic middleware to bypass downstream processing entirely on cache hits.
+
+### Identifying Interference and Deadlocks
+
+**Middleware interference** occurs when two middleware layers' behaviors conflict, typically because:
+
+- **State race conditions**: Multiple middleware modify overlapping state fields without coordination. Use the `state_schema` attribute to declare which fields each middleware owns.
+- **Command ordering conflicts**: If M1 and M3 both return commands that set non-reducer fields to conflicting values, M1's value wins (outermost-wins). Document expected field ownership.
+- **Double-wrapping of handlers**: If two middleware wrap the same hook (e.g., both implement `wrap_model_call`), they compose correctly but may apply contradictory transformations.
+- **Exception propagation mismatches**: If M1 catches exceptions and M2 relies on exceptions propagating, M1's error handling prevents M2's error handling from triggering.
+
+**Debugging strategies**:
+
+1. **Trace spans**: Each middleware hook is automatically traced with spans named `{middleware_name}.{hook_name}`. Use tracing tools (LangSmith, local debugging) to inspect:
+   - Hook execution order
+   - State updates applied by each hook
+   - Request/response transformations
+   - Exception handling and retries
+
+2. **Enable detailed logging**:
+   ```python
+   import logging
+   logging.getLogger("langchain.agents.middleware").setLevel(logging.DEBUG)
+   ```
+
+3. **Test middleware in isolation**: Verify each middleware's behavior separately before composing with others.
+
+4. **Document state ownership**: Declare which state fields each middleware reads/writes in its docstring or in a shared schema.
+
+5. **Add instrumentation**: Override hooks with logging or metrics to track invocation counts, latencies, and state changes.
+
+### Common Ordering Pitfalls
+
+- **Retry after error conversion**: If `ToolErrorMiddleware` is outer and `ToolRetryMiddleware` is inner, errors are converted to messages before retries can happen. Reverse the order.
+- **Fallback triggering too early**: If retry middleware retries every error before fallback runs, the fallback may never execute. Coordinate retry predicates.
+- **Infinite loops**: If middleware modifies tool call arguments before execution and execution produces the same tool call, retries can loop. Add guards in `wrap_tool_call`.
 
 ## Writing Custom Middleware
 

@@ -5,7 +5,7 @@ description: "How streaming works across LLM components and chains, token-by-tok
 tags: [streaming, token-streaming, llm-output, chat-models, callbacks, astream, real-time-feedback]
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+    at: 2026-10-07T08:30:45.453Z
 sources:
   - id: openwiki-source-c9313cf42f0120d86b20245f
     resource: repo://libs/core/langchain_core/callbacks/base.py

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:08b16574d155fea41f84c89a32fa0f8c6c34fcf5a6f640ab81d2d0dd5f796884",
+  "pageVersion": "sha256:a1c8863a5a25ad4f2e35caa220473d352aeb36e3038108a074a184caa8953a9e",
   "claims": [
     {
       "id": "claim_51e65b4f126f42d986b2766ee964d991",
@@ -211,10 +211,44 @@
           "version": "repo-lines-v1:sha256:98f8c09434deaeab4fa002aff9e2811f173ab68db004fa38ae7ed50afc6c8c63:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5ZjdjYjFlODMyZDUyOGZjNjFkOGU5YTg1NzYyNmVmYWRmNDI1NDlhY2YwMzU0YzVkYjMwYzU1M2E5MzQ5ZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA3ODQ4NzIyMWE5ZGZiYTkxYzJmNjcyY2JkYmNiOGRhZjRlMDBhZjc2ZWM2NjFmNTI3M2NjOTZhMzMxYzNlNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5NTkzNDRiYjIzMGEzZDZiM2M1ZWFhNWMwYzg3NzEyNTFhYzU2YzliZjJjOWVjNmViMmJiYTBiNTEzYjhiZmMifQ"
         }
       ]
+    },
+    {
+      "id": "claim_6319ac52a6d049d0ad1d09c1a6561e54",
+      "statement": "Configurable fields enable runtime customization of component parameters via the configurable_fields method, allowing fields to be marked with ConfigurableField instances that define id, name, and description, and then overridden via config={'configurable': {...}} at invocation time.",
+      "evidence": [
+        {
+          "resource": "repo://libs/core/langchain_core/runnables/base.py#L2856-L2912",
+          "version": "repo-lines-v1:sha256:5bfa74c24a85028db1dd00034847e94e270ed3afc38a4dbd248785241672115c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjYjIzZmYyM2FhZDU4NDJhMjYwNmJmNDk5NTBmZDlmMDYyN2VmODdjNmM4ZGI1MTI0YzM4NzA4YjNkNjUzMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlZjk0MDBlN2NhODdjNWNmYjdhYzM3MmVlMmQzYmQ3ZTkxNDRmMmZkMzVkNDRjNzM2ZjgxNjAyNGNhOTBkNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhMWQzM2U3MjcyYjkxZmM2YjNjMmU2N2U5ZmNjZGY4ZDEzMmRkODk5MTc0MGIyOTUxMjg4YTkzOWVmODNlZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjMmUyZWY4MmRkZDExZjljYWNjOWRlMmYyZDYxYWRhZGVlODc1ZjhjOWYxMzRkMWJmNzE4ODJkOTYwNDM2NjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b830c97d5d134999a832e1c015bb593d",
+      "statement": "Configurable alternatives enable switching between different Runnables at runtime via the configurable_alternatives method, allowing a default Runnable and named alternatives to be selected via config={'configurable': {...}} without code changes.",
+      "evidence": [
+        {
+          "resource": "repo://libs/core/langchain_core/runnables/base.py#L2914-L2975",
+          "version": "repo-lines-v1:sha256:a6681dd25c277f2b9a69a23c2de6695c865a7f209dd35b4dda12dad72b80190a:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMGVkZmE5ZTIzM2YzMGI2OTI0NWVkZmVmNWM3YmJmMjA3MjViM2QwYWU3NWFkYTg4ZTM2YzNjYTNhODY5ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwZDI3ZjNlOGYxNDk3OWQ3Y2ViY2NhMmE2ZmU5MzM2ODM2OTRmZGViYjllYWI3NWMzYjAyYWIzMDNlZGUyN2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzM2YxNjRiMDQ4Nzk4ZjY4NTgxNTA0YjhiODZlMWRjM2M2NTk3MTZhZDExN2MzYTBhNGI3NDU2Zjk5ZWM3YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhMDZhY2VlNjA5YTA2NzA0M2ViMmE0ZWUxMTEyNWM0Y2JkZWRkMDc3NjUyNThhNGQ4YzBiYzA2NmVkYzk3NjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dcc1daccaf894e72b748be38a9063805",
+      "statement": "Composable chains are tested through component isolation (testing individual RunnableLambdas independently), integration testing (testing composed sequences with known inputs), mocking external dependencies, verifying fallback and exception handling, and streaming output verification with mock models.",
+      "evidence": [
+        {
+          "resource": "repo://libs/core/tests/unit_tests/runnables/test_fallbacks.py#L69-L150",
+          "version": "repo-lines-v1:sha256:4a8d5ef54c12ff7a59b08b309a96b9141678bacb82a0b25705a627b2a5d57bba:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllZmNjNzVkOTU1MGFlZDRhYWQ1YTQ0YTdmM2E2YjNiYzE1Njk1YTFiNTcyN2U2M2E3ZmFjOWI4NTYzM2I3YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmZmY5MTU2ZThjOGU4MTAzZGY1ZGE5OWFjMDY3NDg3NjE0ZDRiYjIxYWYxYTE4MTg3YmQ3YTdiODczYTU4MjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhZDVjZDYyY2M1ZWE0YWY1NmNlYTJiYmIzNDY4YTFhOGE5NDg3NmQ3MzhlNWVkYWRmYWNjMjMxMDQ3ZmRiYWMifQ"
+        },
+        {
+          "resource": "repo://libs/core/tests/unit_tests/runnables/test_runnable.py#L1-L150",
+          "version": "repo-lines-v1:sha256:c61d14e975b8882c038307347c51b7fe0188b766867aa567af151edd2fa03059:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMzRjOWNkZDQyZjhkODhjMDQ0MjUzNzNhNzMzNjIwOWY2YjJhMmRjZWJlYzMyYjRkNDA1OTNmOTBiZTJiYjI4IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3MDc4YzExOTk0ZDA0MjkwYjhjZjQ0MzkzMjhmMWQwOTE1YmM4ZTYyMTJkMDlkOTA5MGE5ODdkNGQzOTVjODVjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzMjU4MDNlMmUyZjE3ZWZjYTE2NjkyMmI3NDhkMDIwNjEwMjJlYjM4MzJlNGM1NmQ2NjEzZWZiZGM4NjBjZDdlIn0"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.0",
-    "at": "2026-09-28T08:35:20.640Z"
+    "at": "2026-10-07T08:30:45.453Z"
   }
 }

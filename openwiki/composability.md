@@ -3,6 +3,9 @@ type: "Concept"
 title: "Composability and LCEL Chains"
 description: "How Runnable components compose through LCEL operators, creating reusable workflows with automatic async, batch, and streaming support."
 tags: ["composability", "LCEL", "runnables", "chaining", "operators"]
+verified:
+  - by: openwiki/0.5.0
+    at: 2026-10-07T08:30:45.453Z
 sources:
   - id: openwiki-source-a1981e868973f6fd7f71e12e
     resource: repo://libs/core/langchain_core/runnables/base.py
@@ -12,12 +15,12 @@ sources:
     resource: repo://libs/core/langchain_core/runnables/fallbacks.py
   - id: openwiki-source-de6c904bd0171642bd50f6d9
     resource: repo://libs/core/langchain_core/runnables/router.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-28T08:35:20.640Z" }
-verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+  - id: openwiki-source-079d03193d30042739011ef6
+    resource: repo://libs/core/tests/unit_tests/runnables/test_fallbacks.py
+  - id: openwiki-source-4717abc86db20c5c76bbf23a
+    resource: repo://libs/core/tests/unit_tests/runnables/test_runnable.py
+generated: { by: "openwiki/0.5.0", at: "2026-10-07T08:30:45.453Z" }
 ---
-
 
 ## Overview
 
@@ -218,6 +221,20 @@ router.invoke({"key": "add", "input": 3})     # 4
 
 The input is a dict with `"key"` (which Runnable to route to) and `"input"` (the data).
 
+### Conditional Execution
+
+```python
+from langchain_core.runnables import RunnableBranch
+
+route_logic = RunnableBranch(
+    (lambda x: "math" in x.lower(), math_chain),
+    (lambda x: "code" in x.lower(), code_chain),
+    general_chain,
+)
+
+output = route_logic.invoke("How do I calculate factorial?")
+```
+
 ## Composition with RunnablePassthrough
 
 **`RunnablePassthrough`** forwards inputs unchanged or with additional keys, useful for preserving context in parallel branches:
@@ -297,7 +314,35 @@ chain = step1 | {
 output = chain.invoke(input)  # {'result_a': ..., 'result_b': ...}
 ```
 
-Each branch (`result_a`, `result_b`) appears as a separate child run in the callback trace.
+Each branch (`result_a`, `result_b`) appears as a separate child run in the callback trace via `run_manager.get_child(f'map:key:{key}')`.
+
+## Type Safety and Schema Inference
+
+Chains infer input and output types from their components:
+
+```python
+sequence = add_one | mul_two
+
+# Access inferred schemas
+print(sequence.input_schema)   # Pydantic model for input
+print(sequence.output_schema)  # Pydantic model for output
+print(sequence.input_schema.model_json_schema())
+```
+
+This enables validation and documentation without explicit type annotations.
+
+## Optimization and Flattening
+
+**`RunnableSequence`** automatically flattens nested sequences:
+
+```python
+# These are equivalent:
+chain1 = step1 | step2 | step3
+chain2 = step1 | (step2 | step3)
+chain3 = (step1 | step2) | step3
+```
+
+All produce a single flat sequence with steps `[step1, step2, step3]`, avoiding unnecessary nesting overhead.
 
 ## Fallback Patterns
 
@@ -453,6 +498,89 @@ chain = (
 # Better than retrying the whole chain, which wastes time on non-failing steps
 ```
 
+## Configuration: Configurable Fields and Alternatives
+
+Runnables support runtime configuration of fields and alternative behaviors without code changes.
+
+### Configurable Fields
+
+Mark specific fields as runtime-configurable:
+
+```python
+from langchain_core.runnables import ConfigurableField
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(max_tokens=20).configurable_fields(
+    max_tokens=ConfigurableField(
+        id="output_token_number",
+        name="Max tokens in the output",
+        description="The maximum number of tokens in the output",
+    )
+)
+
+# Default: max_tokens = 20
+result_1 = model.invoke("tell me something about chess")
+
+# Override: max_tokens = 200
+result_2 = model.with_config(
+    configurable={"output_token_number": 200}
+).invoke("tell me something about chess")
+```
+
+### Configurable Alternatives
+
+Switch between alternative Runnables at runtime:
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_core.runnables.utils import ConfigurableField
+from langchain_openai import ChatOpenAI
+
+model = ChatAnthropic(
+    model="claude-sonnet-4-5-20250929"
+).configurable_alternatives(
+    ConfigurableField(id="llm"),
+    default_key="anthropic",
+    openai=ChatOpenAI(),
+    local=ChatOllama(model="llama3"),
+)
+
+# Use default (ChatAnthropic)
+result_1 = model.invoke("What is composability?")
+
+# Switch to OpenAI
+result_2 = model.with_config(
+    configurable={"llm": "openai"}
+).invoke("What is composability?")
+
+# Switch to local
+result_3 = model.with_config(
+    configurable={"llm": "local"}
+).invoke("What is composability?")
+```
+
+### Configuration in Chains
+
+Configurations compose through entire chains:
+
+```python
+chain = (
+    ChatPromptTemplate.from_template("Tell me a {length} joke about {topic}")
+    | model.configurable_alternatives(
+        ConfigurableField(id="llm"),
+        default_key="gpt4",
+        gpt4=ChatOpenAI(model="gpt-4"),
+        claude=ChatAnthropic(),
+    )
+    | StrOutputParser()
+)
+
+# Switch models for the entire chain
+result = chain.with_config(
+    configurable={"llm": "claude"}
+).invoke({"topic": "composability", "length": "short"})
+```
+
 ## Chaining Patterns
 
 ### Common Pattern: Prompt → Model → Parser
@@ -497,47 +625,97 @@ result = chain.invoke(text)
 # {'summary': '...', 'entities': [...], 'sentiment': 'positive'}
 ```
 
-### Conditional Execution
+## Testing Composable Chains
+
+Composable chains are tested through component isolation, integration testing, and mock-based verification.
+
+### Isolated Component Testing
+
+Test each component independently before composing:
 
 ```python
-from langchain_core.runnables import RunnableBranch
+import pytest
+from langchain_core.runnables import RunnableLambda
 
-route_logic = RunnableBranch(
-    (lambda x: "math" in x.lower(), math_chain),
-    (lambda x: "code" in x.lower(), code_chain),
-    general_chain,
-)
+def multiply_by_two(x: int) -> int:
+    return x * 2
 
-output = route_logic.invoke("How do I calculate factorial?")
+def test_isolated_runnable():
+    runnable = RunnableLambda(multiply_by_two)
+    assert runnable.invoke(5) == 10
+    assert runnable.batch([1, 2, 3]) == [2, 4, 6]
 ```
 
-## Type Safety and Schema Inference
+### Composition Testing
 
-Chains infer input and output types from their components:
+Test composed chains with known inputs and expected outputs:
 
 ```python
-sequence = add_one | mul_two
-
-# Access inferred schemas
-print(sequence.input_schema)   # Pydantic model for input
-print(sequence.output_schema)  # Pydantic model for output
-print(sequence.input_schema.model_json_schema())
+def test_sequence_composition():
+    add_one = RunnableLambda(lambda x: x + 1)
+    mul_two = RunnableLambda(lambda x: x * 2)
+    chain = add_one | mul_two
+    
+    assert chain.invoke(1) == 4  # (1 + 1) * 2
+    assert chain.batch([1, 2, 3]) == [4, 6, 8]
 ```
 
-This enables validation and documentation without explicit type annotations.
+### Mocking External Dependencies
 
-## Optimization and Flattening
-
-**`RunnableSequence`** automatically flattens nested sequences:
+Mock expensive or external services during testing:
 
 ```python
-# These are equivalent:
-chain1 = step1 | step2 | step3
-chain2 = step1 | (step2 | step3)
-chain3 = (step1 | step2) | step3
+from unittest.mock import patch, MagicMock
+from langchain_core.runnables import RunnableLambda
+
+def test_chain_with_mock():
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value = "mocked response"
+    
+    chain = (
+        prompt_template 
+        | mock_llm  # Use mock instead of real API
+        | parser
+    )
+    
+    result = chain.invoke({"topic": "test"})
+    assert result == "expected parsed output"
+    mock_llm.invoke.assert_called_once()
 ```
 
-All produce a single flat sequence with steps `[step1, step2, step3]`, avoiding unnecessary nesting overhead.
+### Fallback Testing
+
+Verify fallback behavior and exception handling:
+
+```python
+def test_fallback_invoked_on_error():
+    primary = RunnableLambda(lambda x: 1 / x)  # Raises on x=0
+    fallback = RunnableLambda(lambda x: -1)
+    
+    chain = primary.with_fallbacks([fallback])
+    
+    # Primary succeeds
+    assert chain.invoke(2) == 0.5
+    
+    # Fallback is invoked
+    assert chain.invoke(0) == -1
+```
+
+### Streaming Testing
+
+Verify streaming produces expected chunks:
+
+```python
+def test_stream_output():
+    chain = (
+        ChatPromptTemplate.from_template("Say {text}?")
+        | FakeChatModel(response="H e l l o")  # Returns chunked
+        | StrOutputParser()
+    )
+    
+    chunks = list(chain.stream({"text": "hello"}))
+    assert "".join(chunks) == "Hello"
+```
 
 ## Serialization and Debugging
 
@@ -600,5 +778,9 @@ Custom Runnables are automatically compatible with all composition operators.
 | `RouterRunnable` | Key-based routing | `RouterRunnable({"key": runnable})` |
 | `.batch()` / `.abatch()` | Parallel input processing | `chain.batch([in1, in2])` |
 | `.stream()` / `.astream()` | Token-by-token output | `for chunk in chain.stream(input):` |
+| `.with_fallbacks()` | Error resilience | `chain.with_fallbacks([fallback])` |
+| `.with_retry()` | Automatic retries | `chain.with_retry(max_attempt_number=3)` |
+| `.configurable_fields()` | Runtime field config | `runnable.configurable_fields(field=ConfigurableField(...))` |
+| `.configurable_alternatives()` | Runtime behavior switching | `runnable.configurable_alternatives(ConfigurableField(...), alt1=runnable1)` |
 
 See the [Runnables](runnables.md) page for protocol details and method signatures.
